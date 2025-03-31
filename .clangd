@@ -1,0 +1,8 @@
+CompileFlags:
+    Add: 
+    - "-std=c99"
+    - "-Wall"
+    - "-Werror"
+    - "-Wpedantic"
+    - "-I./raylib/include/"
+
