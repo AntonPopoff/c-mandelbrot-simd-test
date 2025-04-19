@@ -1,5 +1,5 @@
 CC = gcc
-FLAGS = -std=c99 -fopenmp -O3 -Wall -Wpedantic -Werror -mavx2 -mavx512f
+FLAGS = -std=c99 -O3 -Wall -Wpedantic -Werror -mavx2 -fopenmp
 
 INCLUDE_PATH = "./raylib/include/"
 LINK_PATH = "./raylib/lib/"

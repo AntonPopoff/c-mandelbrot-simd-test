@@ -1,11 +1,14 @@
 #include "raylib.h"
+#include <emmintrin.h>
 #include <immintrin.h>
 #include <math.h>
 #include <mm_malloc.h>
 #include <omp.h>
+#include <smmintrin.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define WIDTH 1280
 #define HEIGHT 720
@@ -42,22 +45,8 @@ typedef struct {
 } plane;
 
 typedef struct {
-    double *x;
-    double *y;
-    int64_t *i;
-} mandelbrot_avx_t;
-
-void m_init(mandelbrot_avx_t *m) {
-    m->x = _mm_malloc(sizeof(double) * 4, 32);
-    m->y = _mm_malloc(sizeof(double) * 4, 32);
-    m->i = _mm_malloc(sizeof(int64_t) * 4, 32);
-}
-
-void m_free(mandelbrot_avx_t *m) {
-    _mm_free(m->x);
-    _mm_free(m->y);
-    _mm_free(m->i);
-}
+    Color *data;
+} mandelbrot;
 
 complx complx_mul(const complx *c1, const complx *c2) {
     return (complx){
@@ -176,15 +165,26 @@ void mandelbrot_plot(const plane *plane, int64_t width, int64_t height, Color *s
     }
 }
 
-void mandelbrot_plot_avx(const plane *p, int64_t width, int64_t height, Color *set) {
+void mandelbrot_plot_avx2(const plane *p, int64_t width, int64_t height, mandelbrot *pixels) {
 #pragma omp parallel for
     for (int64_t y = 0; y < height; ++y) {
 #pragma omp parallel for
         for (int64_t x = 0; x < width - 4; x += 4) {
-            double x_vec[] = {x, x + 1, x + 2, x + 3};
-            double y_vec[] = {y, y, y, y};
-            __m256d cx = _mm256_loadu_pd(x_vec);
-            __m256d cy = _mm256_loadu_pd(y_vec);
+            double x_vec[4] __attribute((aligned(32)));
+            double y_vec[4] __attribute((aligned(32)));
+
+            x_vec[0] = x;
+            x_vec[1] = x + 1;
+            x_vec[2] = x + 2;
+            x_vec[3] = x + 3;
+
+            y_vec[0] = y;
+            y_vec[1] = y;
+            y_vec[2] = y;
+            y_vec[3] = y;
+
+            __m256d cx = _mm256_load_pd(x_vec);
+            __m256d cy = _mm256_load_pd(y_vec);
 
             cx = _mm256_div_pd(cx, _mm256_set1_pd(p->scale.x));
             cx = _mm256_div_pd(cx, _mm256_set1_pd(p->zoom));
@@ -197,45 +197,121 @@ void mandelbrot_plot_avx(const plane *p, int64_t width, int64_t height, Color *s
 
             __m256d zx = _mm256_setzero_pd();
             __m256d zy = _mm256_setzero_pd();
-            __m256i iter = _mm256_set1_epi64x(0);
+            __m256d iter = _mm256_setzero_pd();
 
-            for (int64_t i = 0; i < 500; ++i) {
-                __m256i one = _mm256_set1_epi64x(1);
+            int32_t escape_mask = 1;
+            // uint64_t steps = 0;
+
+            // while (escape_mask != 0 && ste)
+
+            for (int64_t i = 0; i < 500 && escape_mask != 0; ++i) {
+                __m256d one = _mm256_set1_pd(1);
                 __m256d four = _mm256_set1_pd(4);
                 __m256d zx2 = _mm256_mul_pd(zx, zx);
                 __m256d zy2 = _mm256_mul_pd(zy, zy);
                 __m256d zabs = _mm256_add_pd(zx2, zy2);
                 __m256d cmp = _mm256_cmp_pd(zabs, four, _CMP_LE_OQ);
-                int32_t mask = _mm256_movemask_pd(cmp);
 
-                if (mask == 0) {
-                    break;
-                }
+                // int32_t mask = _mm256_movemask_pd(cmp);
+                escape_mask = _mm256_movemask_pd(cmp);
 
-                __m256i mask_iter = _mm256_castpd_si256(cmp);
-                mask_iter = _mm256_and_si256(mask_iter, one);
-                iter = _mm256_add_epi64(iter, mask_iter);
+                // if (mask == 0) {
+                //     break;
+                // }
+
+                cmp = _mm256_and_pd(cmp, one);
+                iter = _mm256_add_pd(iter, cmp);
 
                 __m256d zxzy = _mm256_mul_pd(zx, zy);
                 zx = _mm256_add_pd(_mm256_sub_pd(zx2, zy2), cx);
                 zy = _mm256_add_pd(_mm256_add_pd(zxzy, zxzy), cy);
             }
 
-            int64_t iter_res[4];
-            int64_t p = y * width + x;
+            iter = _mm256_div_pd(iter, _mm256_set1_pd(500));
+            iter = _mm256_mul_pd(iter, _mm256_set1_pd(255));
+            iter = _mm256_round_pd(iter, 0);
 
-            _mm256_storeu_si256((__m256i_u *)iter_res, iter);
+            double iter_res[4] __attribute((aligned(32)));
+            int64_t offset = y * width + x;
 
-            set[p].a = 255 * (iter_res[0] / 500.0);
-            set[p + 1].a = 255 * (iter_res[1] / 500.0);
-            set[p + 2].a = 255 * (iter_res[2] / 500.0);
-            set[p + 3].a = 255 * (iter_res[3] / 500.0);
+            _mm256_store_pd(iter_res, iter);
+
+            pixels->data[offset].a = iter_res[0];
+            pixels->data[offset + 1].a = iter_res[1];
+            pixels->data[offset + 2].a = iter_res[2];
+            pixels->data[offset + 3].a = iter_res[3];
         }
     }
 }
 
-void render(const Texture2D *set_texture, const Color *set) {
-    UpdateTexture(*set_texture, set);
+void mandelbrot_plot_sse4(const plane *p, int64_t width, int64_t height, mandelbrot *pixels) {
+#pragma omp parallel for
+    for (int64_t y = 0; y < height; ++y) {
+#pragma omp parallel for
+        for (int64_t x = 0; x < width - 2; x += 2) {
+            double x_vec[2] __attribute((aligned(16)));
+            double y_vec[2] __attribute((aligned(16)));
+
+            x_vec[0] = x;
+            x_vec[1] = x + 1;
+
+            y_vec[0] = y;
+            y_vec[1] = y;
+
+            __m128d cx = _mm_load_pd(x_vec);
+            __m128d cy = _mm_load_pd(y_vec);
+
+            cx = _mm_div_pd(cx, _mm_set1_pd(p->scale.x));
+            cx = _mm_div_pd(cx, _mm_set1_pd(p->zoom));
+            cx = _mm_sub_pd(cx, _mm_set1_pd(p->offset.x));
+
+            cy = _mm_mul_pd(cy, _mm_set1_pd(-1.0));
+            cy = _mm_div_pd(cy, _mm_set1_pd(p->scale.y));
+            cy = _mm_div_pd(cy, _mm_set1_pd(p->zoom));
+            cy = _mm_sub_pd(cy, _mm_set1_pd(p->offset.y));
+
+            __m128d zx = _mm_setzero_pd();
+            __m128d zy = _mm_setzero_pd();
+            __m128d iter = _mm_setzero_pd();
+
+            for (int64_t i = 0; i < 500; ++i) {
+                __m128d one = _mm_set1_pd(1);
+                __m128d four = _mm_set1_pd(4);
+                __m128d zx2 = _mm_mul_pd(zx, zx);
+                __m128d zy2 = _mm_mul_pd(zy, zy);
+                __m128d zabs = _mm_add_pd(zx2, zy2);
+                __m128d cmp = _mm_cmp_pd(zabs, four, _CMP_LE_OQ);
+                int32_t mask = _mm_movemask_pd(cmp);
+
+                if (mask == 0) {
+                    break;
+                }
+
+                cmp = _mm_and_pd(cmp, one);
+                iter = _mm_add_pd(iter, cmp);
+
+                __m128d zxzy = _mm_mul_pd(zx, zy);
+                zx = _mm_add_pd(_mm_sub_pd(zx2, zy2), cx);
+                zy = _mm_add_pd(_mm_add_pd(zxzy, zxzy), cy);
+            }
+
+            iter = _mm_div_pd(iter, _mm_set1_pd(500));
+            iter = _mm_mul_pd(iter, _mm_set1_pd(255));
+            iter = _mm_round_pd(iter, 0);
+
+            double iter_res[2] __attribute((aligned(16)));
+            int64_t offset = y * width + x;
+
+            _mm_store_pd(iter_res, iter);
+
+            pixels->data[offset].a = iter_res[0];
+            pixels->data[offset + 1].a = iter_res[1];
+        }
+    }
+}
+
+void render(const Texture2D *set_texture, mandelbrot *pixels) {
+    UpdateTexture(*set_texture, pixels->data);
     BeginDrawing();
     ClearBackground(BLACK);
     DrawTexture(*set_texture, 0, 0, WHITE);
@@ -243,41 +319,51 @@ void render(const Texture2D *set_texture, const Color *set) {
     EndDrawing();
 }
 
+void mandelbrot_init(mandelbrot *pixels, uint64_t width, uint64_t height) {
+    size_t memlen = sizeof(Color) * width * height;
+    pixels->data = malloc(sizeof(Color) * width * height);
+    memset(pixels->data, 255, memlen);
+}
+
+void mandelbrot_free(mandelbrot *pixels) {
+    free(pixels->data);
+    pixels->data = NULL;
+}
+
 int main(void) {
     plane plane = {0};
     input input = {0};
-    Color *set = malloc(sizeof(Color) * WIDTH * HEIGHT);
+    mandelbrot pixels = {0};
 
-    for (int64_t y = 0; y < HEIGHT; ++y) {
-        for (int64_t x = 0; x < WIDTH; ++x) {
-            set[y * WIDTH + x] = (Color){255, 255, 255, 255};
-        }
-    }
+    plane_init(&plane, WIDTH, HEIGHT, 3.5, 1);
+    mandelbrot_init(&pixels, WIDTH, HEIGHT);
+    omp_set_num_threads(4);
 
-    Image screenImage = {.data = set,
+    InitWindow(WIDTH, HEIGHT, "M");
+    SetTraceLogLevel(LOG_NONE);
+    SetTargetFPS(30);
+
+    Image screenImage = {.data = pixels.data,
                          .width = WIDTH,
                          .height = HEIGHT,
                          .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
                          .mipmaps = 1};
-
-    plane_init(&plane, WIDTH, HEIGHT, 3.5, 1);
-
-    SetTraceLogLevel(LOG_NONE);
-    InitWindow(WIDTH, HEIGHT, "Mandelbrot");
-    SetTargetFPS(60);
 
     Texture2D mandelbrot_texture = LoadTextureFromImage(screenImage);
 
     while (!WindowShouldClose()) {
         handle_input(&input);
         update_plane(&plane, &input);
-        mandelbrot_plot_avx(&plane, WIDTH, HEIGHT, set);
-        render(&mandelbrot_texture, set);
+        // mandelbrot_plot_avx2(&plane, WIDTH, HEIGHT, &pixels);
+        mandelbrot_plot_sse4(&plane, WIDTH, HEIGHT, &pixels);
+        render(&mandelbrot_texture, &pixels);
     }
 
-    free(set);
-    UnloadTexture(mandelbrot_texture);
     CloseWindow();
+
+    mandelbrot_free(&pixels);
+    // UnloadImage(screenImage);
+    // UnloadTexture(mandelbrot_texture);
 
     return 0;
 }
