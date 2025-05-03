@@ -1,16 +1,12 @@
-#include "raylib.h"
-#include <emmintrin.h>
-#include <immintrin.h>
-#include <mm_malloc.h>
 #include <omp.h>
-#include <smmintrin.h>
+#include <raylib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "plane.h"
 #include "mandelbrot.h"
+#include "plane.h"
 
 #define WIDTH 1280
 #define HEIGHT 720
