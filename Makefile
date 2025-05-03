@@ -1,5 +1,6 @@
 CC = gcc
 FLAGS = -MMD -MP -std=c99 -O3 -Wall -Wpedantic -Werror -mavx2 -fopenmp
+LFLAGS = -lraylib -lm
 
 TARGET = m
 
@@ -10,7 +11,7 @@ DEPS = $(patsubst %.c, %.d, $(SOURCES))
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
-	$(CC) $(FLAGS) -o $@ $^ -lraylib -lm
+	$(CC) $(FLAGS) -o $@ $^ $(LFLAGS)
 
 %.o: %.c
 	$(CC) $(FLAGS) -c $<

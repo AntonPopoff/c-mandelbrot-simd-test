@@ -2,14 +2,12 @@
 #include <raylib.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "mandelbrot.h"
 #include "plane.h"
 
-#define WIDTH 1280
-#define HEIGHT 720
+#define WIDTH 1920
+#define HEIGHT 1080
 
 typedef struct {
     vec2i mouse;
@@ -63,8 +61,8 @@ void update_plane(plane *plane, const input *input) {
     plane->screen.y = GetScreenHeight();
 }
 
-void render(const Texture2D *set_texture, mandelbrot *pixels) {
-    UpdateTexture(*set_texture, pixels->data);
+void render(const Texture2D *set_texture, const ms_surface *s) {
+    UpdateTexture(*set_texture, s->surface.data);
     BeginDrawing();
     ClearBackground(BLACK);
     DrawTexture(*set_texture, 0, 0, WHITE);
@@ -72,52 +70,31 @@ void render(const Texture2D *set_texture, mandelbrot *pixels) {
     EndDrawing();
 }
 
-void mandelbrot_init(mandelbrot *pixels, uint64_t width, uint64_t height) {
-    size_t memlen = sizeof(Color) * width * height;
-    pixels->data = malloc(sizeof(Color) * width * height);
-    memset(pixels->data, 255, memlen);
-}
-
-void mandelbrot_free(mandelbrot *pixels) {
-    free(pixels->data);
-    pixels->data = NULL;
-}
-
 int main(void) {
     plane plane = {0};
     input input = {0};
-    mandelbrot pixels = {0};
+    ms_surface surface = {0};
 
     plane_init(&plane, WIDTH, HEIGHT, 3.5, 1);
-    mandelbrot_init(&pixels, WIDTH, HEIGHT);
-    // omp_set_num_threads(4);
+    ms_surface_init(&surface, WIDTH, HEIGHT);
 
-    InitWindow(WIDTH, HEIGHT, "M");
     SetTraceLogLevel(LOG_NONE);
-    // SetTargetFPS(30);
+    InitWindow(WIDTH, HEIGHT, "M");
+    ToggleFullscreen();
 
-    Image screenImage = {.data = pixels.data,
-                         .width = WIDTH,
-                         .height = HEIGHT,
-                         .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-                         .mipmaps = 1};
-
-    Texture2D mandelbrot_texture = LoadTextureFromImage(screenImage);
+    Texture2D mandelbrot_texture = LoadTextureFromImage(surface.surface);
 
     while (!WindowShouldClose()) {
         handle_input(&input);
         update_plane(&plane, &input);
-        mandelbrot_plot_scalar(&plane, &pixels);
-        // mandelbrot_plot_avx2(&plane, &pixels);
-        // mandelbrot_plot_sse4(&plane, &pixels);
-        render(&mandelbrot_texture, &pixels);
+        // ms_plot_scalar(&plane, &surface);
+        // ms_plot_avx2(&plane, &surface);
+        ms_plot_sse4(&plane, &surface);
+        render(&mandelbrot_texture, &surface);
     }
 
     CloseWindow();
-
-    mandelbrot_free(&pixels);
-    // UnloadImage(screenImage);
-    // UnloadTexture(mandelbrot_texture);
+    ms_surface_free(&surface);
 
     return 0;
 }

@@ -9,12 +9,20 @@
 
 typedef struct {
     Color *data;
-} mandelbrot;
+    Image surface;
+    size_t size;
+} ms_surface;
 
-void mandelbrot_plot_scalar(const plane *plane, mandelbrot *set);
+void ms_surface_init(ms_surface *s, int32_t width, int32_t height);
 
-void mandelbrot_plot_avx2(const plane *p, mandelbrot *pixels);
+void ms_surface_free(ms_surface *s);
 
-void mandelbrot_plot_sse4(const plane *p, mandelbrot *pixels);
+void ms_surface_set_alpha(ms_surface *s, size_t offset, uint8_t a);
+
+void ms_plot_scalar(const plane *p, ms_surface *s);
+
+void ms_plot_avx2(const plane *p, ms_surface *s);
+
+void ms_plot_sse4(const plane *p, ms_surface *s);
 
 #endif
