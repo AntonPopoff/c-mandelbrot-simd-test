@@ -7,26 +7,26 @@
 typedef struct {
     int32_t x;
     int32_t y;
-} vec2i;
+} ms_vec2i;
 
 typedef struct {
     double x;
     double y;
-} vec2d;
+} ms_vec2d;
 
 typedef struct {
-    vec2i screen;
-    vec2d scale;
-    vec2d offset;
+    ms_vec2i screen;
+    ms_vec2d scale;
+    ms_vec2d offset;
     double zoom;
-} plane;
+} ms_plane;
 
-vec2d plane_from_screen_no_offset(const plane *p, double x, double y);
+ms_vec2d plane_from_screen_no_offset(const ms_plane *p, double x, double y);
 
-vec2d plane_from_screen(const plane *p, double x, double y);
+ms_vec2d plane_from_screen(const ms_plane *p, double x, double y);
 
-vec2d plane_to_screen(const plane *p, double x, double y);
+ms_vec2d plane_to_screen(const ms_plane *p, double x, double y);
 
-void plane_zoom_around(plane *p, int64_t mouse_x, int64_t mouse_y, double wheel);
+void plane_zoom_around(ms_plane *p, int64_t mouse_x, int64_t mouse_y, double wheel);
 
 #endif

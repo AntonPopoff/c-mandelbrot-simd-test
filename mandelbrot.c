@@ -18,7 +18,21 @@ void ms_surface_set_alpha(ms_surface *s, size_t offset, uint8_t a) {
     ((Color *)s->surface.data)[offset].a = a;
 }
 
-void ms_plot_scalar(const plane *p, ms_surface *s) {
+void ms_plot(const ms_plane *p, ms_surface *s, ms_impl i) {
+    switch (i) {
+    case SCALAR:
+        ms_plot_scalar(p, s);
+        break;
+    case SSE4:
+        ms_plot_sse4(p, s);
+        break;
+    case AVX2:
+        ms_plot_avx2(p, s);
+        break;
+    }
+}
+
+void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
 #pragma omp parallel for
     for (size_t i = 0; i < s->size; ++i) {
         int32_t x = i % p->screen.x;
@@ -45,7 +59,7 @@ void ms_plot_scalar(const plane *p, ms_surface *s) {
     }
 }
 
-void ms_plot_avx2(const plane *p, ms_surface *s) {
+void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
 #pragma omp parallel for
     for (size_t i = 0; i < s->size - 4; i += 4) {
         int32_t x = i % p->screen.x;
@@ -110,7 +124,7 @@ void ms_plot_avx2(const plane *p, ms_surface *s) {
     }
 }
 
-void ms_plot_sse4(const plane *p, ms_surface *s) {
+void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
 #pragma omp parallel for
     for (size_t i = 0; i < s->size - 2; i += 2) {
         int32_t x = i % p->screen.x;

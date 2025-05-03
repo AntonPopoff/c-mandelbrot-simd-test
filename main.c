@@ -10,21 +10,22 @@
 #define HEIGHT 1080
 
 typedef struct {
-    vec2i mouse;
-    vec2i mouse_dxdy;
+    ms_vec2i mouse;
+    ms_vec2i mouse_dxdy;
     double mouse_wheel_v;
+    ms_impl implementation;
     bool down;
     bool drag;
     bool up;
 } input;
 
-void plane_init(plane *p, int64_t screen_width, int64_t screen_height, double unit_scale,
+void plane_init(ms_plane *p, int64_t screen_width, int64_t screen_height, double unit_scale,
                 double zoom) {
     p->screen.x = screen_width;
     p->screen.y = screen_height;
     p->scale.x = screen_width / unit_scale;
     p->scale.y = screen_width / unit_scale;
-    p->offset.x = (screen_width / p->scale.x) / 2;
+    p->offset.x = (screen_width / p->scale.x) / 2 + 1;
     p->offset.y = -(screen_height / p->scale.y) / 2;
     p->zoom = zoom;
 }
@@ -40,11 +41,22 @@ void handle_input(input *input) {
     input->drag = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     input->down = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && IsKeyUp(KEY_LEFT_SHIFT);
     input->up = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && IsKeyDown(KEY_LEFT_SHIFT);
+
+    if (IsKeyPressed(KEY_F1)) {
+        input->implementation = SCALAR;
+    }
+    if (IsKeyPressed(KEY_F2)) {
+        input->implementation = SSE4;
+    }
+    if (IsKeyPressed(KEY_F3)) {
+        input->implementation = AVX2;
+    }
 }
 
-void update_plane(plane *plane, const input *input) {
+void update_plane(ms_plane *plane, const input *input) {
     if (input->drag == true) {
-        vec2d dxdy = plane_from_screen_no_offset(plane, input->mouse_dxdy.x, input->mouse_dxdy.y);
+        ms_vec2d dxdy =
+            plane_from_screen_no_offset(plane, input->mouse_dxdy.x, input->mouse_dxdy.y);
         plane->offset.x += dxdy.x;
         plane->offset.y += dxdy.y;
     }
@@ -61,17 +73,36 @@ void update_plane(plane *plane, const input *input) {
     plane->screen.y = GetScreenHeight();
 }
 
-void render(const Texture2D *set_texture, const ms_surface *s) {
+void render(const input *i, const Texture2D *set_texture, const ms_surface *s) {
     UpdateTexture(*set_texture, s->surface.data);
     BeginDrawing();
     ClearBackground(BLACK);
+
     DrawTexture(*set_texture, 0, 0, WHITE);
+
     DrawFPS(0, 0);
+
+    switch (i->implementation) {
+    case SCALAR:
+        DrawText("Implementation: Scalar", 0, 25, 20, RAYWHITE);
+        break;
+    case SSE4:
+        DrawText("Implementation: SSE4", 0, 25, 20, RAYWHITE);
+        break;
+    case AVX2:
+        DrawText("Implementation: AVX2", 0, 25, 20, RAYWHITE);
+        break;
+    }
+
+    DrawText(TextFormat("Threads: %d", omp_get_max_threads()), 0, 50, 20, RAYWHITE);
+    // TODO: Add iterations number information
+    // TODO: Add zoom level information
+
     EndDrawing();
 }
 
 int main(void) {
-    plane plane = {0};
+    ms_plane plane = {0};
     input input = {0};
     ms_surface surface = {0};
 
@@ -87,12 +118,11 @@ int main(void) {
     while (!WindowShouldClose()) {
         handle_input(&input);
         update_plane(&plane, &input);
-        // ms_plot_scalar(&plane, &surface);
-        // ms_plot_avx2(&plane, &surface);
-        ms_plot_sse4(&plane, &surface);
-        render(&mandelbrot_texture, &surface);
+        ms_plot(&plane, &surface, input.implementation);
+        render(&input, &mandelbrot_texture, &surface);
     }
 
+    UnloadTexture(mandelbrot_texture);
     CloseWindow();
     ms_surface_free(&surface);
 
