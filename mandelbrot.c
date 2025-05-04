@@ -20,27 +20,16 @@ void ms_surface_set_alpha(ms_surface *s, size_t offset, uint8_t a) {
     ((Color *)s->surface.data)[offset].a = a;
 }
 
-void ms_plot(const ms_plane *p, ms_surface *s, ms_impl i) {
-    switch (i) {
-    case SCALAR:
-        ms_plot_scalar(p, s);
-        break;
-    case SSE4:
-        ms_plot_sse4(p, s);
-        break;
-    case AVX2:
-        ms_plot_avx2(p, s);
-        break;
-    }
-}
-
 void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
+    double transform_x = 1 / p->scale / p->zoom;
+    double transform_y = -1 / p->scale / p->zoom;
+
 #pragma omp parallel for schedule(guided)
     for (size_t i = 0; i < s->size; ++i) {
         int32_t x = i % p->screen.x;
         int32_t y = i / p->screen.x;
-        double cx = x / p->scale.x / p->zoom - p->offset.x;
-        double cy = -y / p->scale.y / p->zoom - p->offset.y;
+        double cx = x * transform_x - p->offset.x;
+        double cy = y * transform_y - p->offset.y;
         double zx = 0;
         double zy = 0;
         double zabs = 0;
@@ -62,15 +51,15 @@ void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
 }
 
 void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
-    double transform_x = 1.0 / (p->scale.x * p->zoom);
-    double transform_y = -1.0 / (p->scale.y * p->zoom);
+    double transform_x = 1.0 / (p->scale * p->zoom);
+    double transform_y = -1.0 / (p->scale * p->zoom);
     __m256d inv_sxz_vec = _mm256_set1_pd(transform_x);
     __m256d inv_syz_vec = _mm256_set1_pd(transform_y);
     __m256d one = _mm256_set1_pd(1);
     __m256d four = _mm256_set1_pd(4);
 
-#pragma omp parallel for schedule(dynamic, 8)
-    for (size_t i = 0; i < s->size - 4; i += 4) {
+#pragma omp parallel for schedule(guided)
+    for (size_t i = 0; i < s->size; i += 4) {
         int32_t x = i % p->screen.x;
         int32_t y = i / p->screen.x;
         double x_vec[4] __attribute((aligned(32)));
@@ -131,15 +120,15 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
 }
 
 void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
-    double transform_x = 1.0 / (p->scale.x * p->zoom);
-    double transform_y = -1.0 / (p->scale.y * p->zoom);
+    double transform_x = 1.0 / (p->scale * p->zoom);
+    double transform_y = -1.0 / (p->scale * p->zoom);
     __m128d inv_sxz_vec = _mm_set1_pd(transform_x);
     __m128d inv_syz_vec = _mm_set1_pd(transform_y);
     __m128d one = _mm_set1_pd(1);
     __m128d four = _mm_set1_pd(4);
 
 #pragma omp parallel for schedule(guided)
-    for (size_t i = 0; i < s->size - 2; i += 2) {
+    for (size_t i = 0; i < s->size; i += 2) {
         int32_t x = i % p->screen.x;
         int32_t y = i / p->screen.x;
         double x_vec[2] __attribute((aligned(16)));

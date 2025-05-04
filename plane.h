@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define MAX_ZOOM_LEVEL 1e11
+
 typedef struct {
     int32_t x;
     int32_t y;
@@ -16,8 +18,8 @@ typedef struct {
 
 typedef struct {
     ms_vec2i screen;
-    ms_vec2d scale;
     ms_vec2d offset;
+    double scale;
     double zoom;
 } ms_plane;
 
@@ -27,6 +29,6 @@ ms_vec2d plane_from_screen(const ms_plane *p, double x, double y);
 
 ms_vec2d plane_to_screen(const ms_plane *p, double x, double y);
 
-void plane_zoom_around(ms_plane *p, int64_t mouse_x, int64_t mouse_y, double wheel);
+void plane_zoom_around(ms_plane *p, int32_t mouse_x, int32_t mouse_y, double wheel);
 
 #endif

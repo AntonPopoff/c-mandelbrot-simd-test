@@ -13,24 +13,12 @@ typedef struct {
     ms_vec2i mouse;
     ms_vec2i mouse_dxdy;
     double mouse_wheel_v;
-    ms_impl implementation;
-    bool down;
-    bool drag;
-    bool up;
-} input;
+    bool plane_drag;
+    bool zoom_down;
+    bool zoom_up;
+} ms_input;
 
-void plane_init(ms_plane *p, int64_t screen_width, int64_t screen_height, double unit_scale,
-                double zoom) {
-    p->screen.x = screen_width;
-    p->screen.y = screen_height;
-    p->scale.x = screen_width / unit_scale;
-    p->scale.y = screen_width / unit_scale;
-    p->offset.x = (screen_width / p->scale.x) / 2 + 1;
-    p->offset.y = -(screen_height / p->scale.y) / 2;
-    p->zoom = zoom;
-}
-
-void handle_input(input *input) {
+void handle_input(ms_input *input, ms_mandelbrot_config *config) {
     double mouse_x = GetMouseX();
     double mouse_y = GetMouseY();
     input->mouse_dxdy.x = mouse_x - input->mouse.x;
@@ -38,33 +26,34 @@ void handle_input(input *input) {
     input->mouse.x = mouse_x;
     input->mouse.y = mouse_y;
     input->mouse_wheel_v = GetMouseWheelMove();
-    input->drag = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-    input->down = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && IsKeyUp(KEY_LEFT_SHIFT);
-    input->up = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && IsKeyDown(KEY_LEFT_SHIFT);
+    input->plane_drag = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    input->zoom_down = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && IsKeyUp(KEY_LEFT_SHIFT);
+    input->zoom_up = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && IsKeyDown(KEY_LEFT_SHIFT);
 
     if (IsKeyPressed(KEY_F1)) {
-        input->implementation = SCALAR;
-    }
-    if (IsKeyPressed(KEY_F2)) {
-        input->implementation = SSE4;
-    }
-    if (IsKeyPressed(KEY_F3)) {
-        input->implementation = AVX2;
+        config->impl = SCALAR;
+        config->plot_f = ms_plot_scalar;
+    } else if (IsKeyPressed(KEY_F2)) {
+        config->impl = SSE4;
+        config->plot_f = ms_plot_sse4;
+    } else if (IsKeyPressed(KEY_F3)) {
+        config->impl = AVX2;
+        config->plot_f = ms_plot_avx2;
     }
 }
 
-void update_plane(ms_plane *plane, const input *input) {
-    if (input->drag == true) {
+void update_plane(ms_plane *plane, const ms_input *input) {
+    if (input->plane_drag == true) {
         ms_vec2d dxdy =
             plane_from_screen_no_offset(plane, input->mouse_dxdy.x, input->mouse_dxdy.y);
         plane->offset.x += dxdy.x;
         plane->offset.y += dxdy.y;
     }
-    if (input->down) {
-        plane_zoom_around(plane, input->mouse.x, input->mouse.y, 5);
+    if (input->zoom_down) {
+        plane_zoom_around(plane, input->mouse.x, input->mouse.y, 1);
     }
-    if (input->up) {
-        plane_zoom_around(plane, input->mouse.x, input->mouse.y, -5);
+    if (input->zoom_up) {
+        plane_zoom_around(plane, input->mouse.x, input->mouse.y, -1);
     }
     if (input->mouse_wheel_v != 0) {
         plane_zoom_around(plane, input->mouse.x, input->mouse.y, input->mouse_wheel_v * 5);
@@ -73,7 +62,8 @@ void update_plane(ms_plane *plane, const input *input) {
     plane->screen.y = GetScreenHeight();
 }
 
-void render(const input *i, const Texture2D *set_texture, const ms_surface *s) {
+void render(const ms_input *i, const ms_mandelbrot_config *c, const Texture2D *set_texture,
+            const ms_surface *s) {
     UpdateTexture(*set_texture, s->surface.data);
     BeginDrawing();
     ClearBackground(BLACK);
@@ -82,7 +72,7 @@ void render(const input *i, const Texture2D *set_texture, const ms_surface *s) {
 
     DrawFPS(0, 0);
 
-    switch (i->implementation) {
+    switch (c->impl) {
     case SCALAR:
         DrawText("Implementation: Scalar", 0, 25, 20, RAYWHITE);
         break;
@@ -102,30 +92,37 @@ void render(const input *i, const Texture2D *set_texture, const ms_surface *s) {
 }
 
 int main(void) {
-    ms_plane plane = {0};
-    input input = {0};
-    ms_surface surface = {0};
-
-    input.implementation = AVX2;
-
-    plane_init(&plane, WIDTH, HEIGHT, 3.5, 1);
-    ms_surface_init(&surface, WIDTH, HEIGHT);
-
     SetTraceLogLevel(LOG_NONE);
     InitWindow(WIDTH, HEIGHT, "M");
     SetTargetFPS(60);
     ToggleFullscreen();
 
-    Texture2D mandelbrot_texture = LoadTextureFromImage(surface.surface);
+    ms_plane plane = {0};
+    plane.screen.x = WIDTH;
+    plane.screen.y = HEIGHT;
+    plane.scale = plane.screen.x / 3.5;
+    plane.zoom = 1;
+    plane.offset.x = 0;
+    plane.offset.y = 0;
+
+    ms_mandelbrot_config config = {0};
+    config.impl = AVX2;
+    config.plot_f = ms_plot_avx2;
+
+    ms_surface surface = {0};
+    ms_surface_init(&surface, WIDTH, HEIGHT);
+
+    ms_input input = {0};
+    Texture2D render_texture = LoadTextureFromImage(surface.surface);
 
     while (!WindowShouldClose()) {
-        handle_input(&input);
+        handle_input(&input, &config);
         update_plane(&plane, &input);
-        ms_plot(&plane, &surface, input.implementation);
-        render(&input, &mandelbrot_texture, &surface);
+        config.plot_f(&plane, &surface);
+        render(&input, &config, &render_texture, &surface);
     }
 
-    UnloadTexture(mandelbrot_texture);
+    UnloadTexture(render_texture);
     CloseWindow();
     ms_surface_free(&surface);
 
