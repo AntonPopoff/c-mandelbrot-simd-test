@@ -1,3 +1,5 @@
+#include <emmintrin.h>
+#include <immintrin.h>
 #include <raylib.h>
 #include <stdint.h>
 
@@ -33,7 +35,7 @@ void ms_plot(const ms_plane *p, ms_surface *s, ms_impl i) {
 }
 
 void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
-#pragma omp parallel for
+#pragma omp parallel for schedule(guided)
     for (size_t i = 0; i < s->size; ++i) {
         int32_t x = i % p->screen.x;
         int32_t y = i / p->screen.x;
@@ -60,7 +62,14 @@ void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
 }
 
 void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
-#pragma omp parallel for
+    double transform_x = 1.0 / (p->scale.x * p->zoom);
+    double transform_y = -1.0 / (p->scale.y * p->zoom);
+    __m256d inv_sxz_vec = _mm256_set1_pd(transform_x);
+    __m256d inv_syz_vec = _mm256_set1_pd(transform_y);
+    __m256d one = _mm256_set1_pd(1);
+    __m256d four = _mm256_set1_pd(4);
+
+#pragma omp parallel for schedule(dynamic, 8)
     for (size_t i = 0; i < s->size - 4; i += 4) {
         int32_t x = i % p->screen.x;
         int32_t y = i / p->screen.x;
@@ -80,36 +89,33 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
 
         __m256d cx = _mm256_load_pd(x_vec);
         __m256d cy = _mm256_load_pd(y_vec);
-
-        cx = _mm256_div_pd(cx, _mm256_set1_pd(p->scale.x));
-        cx = _mm256_div_pd(cx, _mm256_set1_pd(p->zoom));
+        cx = _mm256_mul_pd(cx, inv_sxz_vec);
         cx = _mm256_sub_pd(cx, _mm256_set1_pd(p->offset.x));
-
-        cy = _mm256_mul_pd(cy, _mm256_set1_pd(-1.0));
-        cy = _mm256_div_pd(cy, _mm256_set1_pd(p->scale.y));
-        cy = _mm256_div_pd(cy, _mm256_set1_pd(p->zoom));
+        cy = _mm256_mul_pd(cy, inv_syz_vec);
         cy = _mm256_sub_pd(cy, _mm256_set1_pd(p->offset.y));
 
         __m256d zx = _mm256_setzero_pd();
         __m256d zy = _mm256_setzero_pd();
         __m256d iter = _mm256_setzero_pd();
-        int32_t escape_mask = 1;
 
-        for (int64_t i = 0; i < 200 && escape_mask != 0; ++i) {
-            __m256d one = _mm256_set1_pd(1);
-            __m256d four = _mm256_set1_pd(4);
+        for (int64_t i = 0; i < 200; ++i) {
             __m256d zx2 = _mm256_mul_pd(zx, zx);
             __m256d zy2 = _mm256_mul_pd(zy, zy);
             __m256d zabs = _mm256_add_pd(zx2, zy2);
             __m256d cmp = _mm256_cmp_pd(zabs, four, _CMP_LE_OQ);
-            escape_mask = _mm256_movemask_pd(cmp);
+            int32_t escape_mask = _mm256_movemask_pd(cmp);
 
-            cmp = _mm256_and_pd(cmp, one);
-            iter = _mm256_add_pd(iter, cmp);
+            if (escape_mask == 0) {
+                break;
+            }
 
             __m256d zxzy = _mm256_mul_pd(zx, zy);
-            zx = _mm256_add_pd(_mm256_sub_pd(zx2, zy2), cx);
-            zy = _mm256_add_pd(_mm256_add_pd(zxzy, zxzy), cy);
+            __m256d nzx = _mm256_add_pd(_mm256_sub_pd(zx2, zy2), cx);
+            __m256d nzy = _mm256_add_pd(_mm256_add_pd(zxzy, zxzy), cy);
+            zx = _mm256_blendv_pd(zx, nzx, cmp);
+            zy = _mm256_blendv_pd(zy, nzy, cmp);
+            cmp = _mm256_and_pd(cmp, one);
+            iter = _mm256_add_pd(iter, cmp);
         }
 
         iter = _mm256_div_pd(iter, _mm256_set1_pd(200));
@@ -125,7 +131,14 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
 }
 
 void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
-#pragma omp parallel for
+    double transform_x = 1.0 / (p->scale.x * p->zoom);
+    double transform_y = -1.0 / (p->scale.y * p->zoom);
+    __m128d inv_sxz_vec = _mm_set1_pd(transform_x);
+    __m128d inv_syz_vec = _mm_set1_pd(transform_y);
+    __m128d one = _mm_set1_pd(1);
+    __m128d four = _mm_set1_pd(4);
+
+#pragma omp parallel for schedule(guided)
     for (size_t i = 0; i < s->size - 2; i += 2) {
         int32_t x = i % p->screen.x;
         int32_t y = i / p->screen.x;
@@ -141,14 +154,9 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
 
         __m128d cx = _mm_load_pd(x_vec);
         __m128d cy = _mm_load_pd(y_vec);
-
-        cx = _mm_div_pd(cx, _mm_set1_pd(p->scale.x));
-        cx = _mm_div_pd(cx, _mm_set1_pd(p->zoom));
+        cx = _mm_mul_pd(cx, inv_sxz_vec);
         cx = _mm_sub_pd(cx, _mm_set1_pd(p->offset.x));
-
-        cy = _mm_mul_pd(cy, _mm_set1_pd(-1.0));
-        cy = _mm_div_pd(cy, _mm_set1_pd(p->scale.y));
-        cy = _mm_div_pd(cy, _mm_set1_pd(p->zoom));
+        cy = _mm_mul_pd(cy, inv_syz_vec);
         cy = _mm_sub_pd(cy, _mm_set1_pd(p->offset.y));
 
         __m128d zx = _mm_setzero_pd();
@@ -156,24 +164,21 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
         __m128d iter = _mm_setzero_pd();
 
         for (int64_t i = 0; i < 200; ++i) {
-            __m128d one = _mm_set1_pd(1);
-            __m128d four = _mm_set1_pd(4);
             __m128d zx2 = _mm_mul_pd(zx, zx);
             __m128d zy2 = _mm_mul_pd(zy, zy);
             __m128d zabs = _mm_add_pd(zx2, zy2);
             __m128d cmp = _mm_cmp_pd(zabs, four, _CMP_LE_OQ);
-            int32_t mask = _mm_movemask_pd(cmp);
+            int32_t escape_mask = _mm_movemask_pd(cmp);
 
-            if (mask == 0) {
+            if (escape_mask == 0) {
                 break;
             }
-
-            cmp = _mm_and_pd(cmp, one);
-            iter = _mm_add_pd(iter, cmp);
 
             __m128d zxzy = _mm_mul_pd(zx, zy);
             zx = _mm_add_pd(_mm_sub_pd(zx2, zy2), cx);
             zy = _mm_add_pd(_mm_add_pd(zxzy, zxzy), cy);
+            cmp = _mm_and_pd(cmp, one);
+            iter = _mm_add_pd(iter, cmp);
         }
 
         iter = _mm_div_pd(iter, _mm_set1_pd(200));

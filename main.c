@@ -106,11 +106,14 @@ int main(void) {
     input input = {0};
     ms_surface surface = {0};
 
+    input.implementation = AVX2;
+
     plane_init(&plane, WIDTH, HEIGHT, 3.5, 1);
     ms_surface_init(&surface, WIDTH, HEIGHT);
 
     SetTraceLogLevel(LOG_NONE);
     InitWindow(WIDTH, HEIGHT, "M");
+    SetTargetFPS(60);
     ToggleFullscreen();
 
     Texture2D mandelbrot_texture = LoadTextureFromImage(surface.surface);
