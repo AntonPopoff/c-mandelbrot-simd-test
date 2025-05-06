@@ -4,5 +4,4 @@ CompileFlags:
     - "-Wall"
     - "-Werror"
     - "-Wpedantic"
-    - "-I./raylib/include/"
 

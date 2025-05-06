@@ -1,5 +1,6 @@
-#include "plane.h"
 #include <stdint.h>
+
+#include "plane.h"
 
 ms_vec2d plane_to_screen(const ms_plane *p, double x, double y) {
     return (ms_vec2d){

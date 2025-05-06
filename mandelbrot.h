@@ -1,11 +1,12 @@
 #ifndef MANDELBROT_H
 #define MANDELBROT_H
 
-#include "plane.h"
 #include <immintrin.h>
 #include <raylib.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+#include "plane.h"
 
 #define MAX_ZOOM_LEVEL 1e11
 

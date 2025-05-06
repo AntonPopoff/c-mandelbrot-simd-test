@@ -24,7 +24,9 @@ double z_speed(double z) {
     return 2 + 2 * l * l * l * l;
 }
 
-double z_steps(double z) { return 100 + 150 * log10(z); }
+double z_steps(double z) {
+    return 100 + 150 * log10(z);
+}
 
 void handle_input(ms_input *input, ms_mandelbrot_config *config) {
     double mouse_x = GetMouseX();
@@ -69,7 +71,6 @@ void update_plane(const ms_input *input, ms_plane *p, ms_mandelbrot_config *c) {
     }
     p->screen.x = GetScreenWidth();
     p->screen.y = GetScreenHeight();
-
     c->steps = z_steps(p->zoom);
 }
 
