@@ -1,10 +1,14 @@
 #include <emmintrin.h>
 #include <immintrin.h>
+#include <math.h>
 #include <raylib.h>
 #include <stdint.h>
 
 #include "mandelbrot.h"
 #include "plane.h"
+
+#define DEFAULT_EFFORT 100
+#define EFFORT_SCALE 150
 
 void ms_surface_init(ms_surface *s, int32_t w, int32_t h) {
     s->surface = GenImageColor(w, h, WHITE);
@@ -18,6 +22,10 @@ void ms_surface_free(ms_surface *s) {
 
 void ms_surface_set_alpha(ms_surface *s, size_t offset, uint8_t a) {
     ((Color *)s->surface.data)[offset].a = a;
+}
+
+int64_t ms_effort(double z) {
+    return DEFAULT_EFFORT + (int64_t)(EFFORT_SCALE * log10(z));
 }
 
 void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
@@ -64,7 +72,6 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
         int32_t y = i / p->screen.x;
         double x_vec[4] __attribute((aligned(32)));
         double y_vec[4] __attribute((aligned(32)));
-        double iter_res[4] __attribute((aligned(32)));
 
         x_vec[0] = x;
         x_vec[1] = x + 1;
@@ -110,6 +117,8 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
         iter = _mm256_div_pd(iter, _mm256_set1_pd(200));
         iter = _mm256_mul_pd(iter, _mm256_set1_pd(255));
         iter = _mm256_round_pd(iter, 0);
+
+        double iter_res[4] __attribute((aligned(32)));
         _mm256_store_pd(iter_res, iter);
 
         ms_surface_set_alpha(s, i, iter_res[0]);
@@ -133,7 +142,6 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
         int32_t y = i / p->screen.x;
         double x_vec[2] __attribute((aligned(16)));
         double y_vec[2] __attribute((aligned(16)));
-        double iter_res[2] __attribute((aligned(16)));
 
         x_vec[0] = x;
         x_vec[1] = x + 1;
@@ -173,6 +181,8 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
         iter = _mm_div_pd(iter, _mm_set1_pd(200));
         iter = _mm_mul_pd(iter, _mm_set1_pd(255));
         iter = _mm_round_pd(iter, 0);
+
+        double iter_res[2] __attribute((aligned(16)));
         _mm_store_pd(iter_res, iter);
 
         ms_surface_set_alpha(s, i, iter_res[0]);

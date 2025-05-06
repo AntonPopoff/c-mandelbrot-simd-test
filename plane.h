@@ -4,8 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MAX_ZOOM_LEVEL 1e11
-
 typedef struct {
     int32_t x;
     int32_t y;
