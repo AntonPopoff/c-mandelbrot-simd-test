@@ -24,11 +24,17 @@ void ms_surface_set_alpha(ms_surface *s, size_t offset, uint8_t a) {
     ((Color *)s->surface.data)[offset].a = a;
 }
 
-int64_t ms_effort(double z) {
-    return DEFAULT_EFFORT + (int64_t)(EFFORT_SCALE * log10(z));
+double zoom_speed(double z) {
+    double l = log10(z);
+    return 2 + 2 * l * l * l * l;
 }
 
-void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
+int32_t zoom_effort(double z) {
+    double l = log(z);
+    return (int32_t)(100 + 100 * (l > 0 ? l : 0));
+}
+
+void ms_plot_scalar(const ms_plane *p, ms_surface *s, int32_t effort) {
     double transform_x = 1 / p->scale / p->zoom;
     double transform_y = -1 / p->scale / p->zoom;
 
@@ -41,30 +47,30 @@ void ms_plot_scalar(const ms_plane *p, ms_surface *s) {
         double zx = 0;
         double zy = 0;
         double zabs = 0;
-        uint32_t step = 0;
+        int32_t step = 0;
 
-        while (step < 200 && zabs <= 4) {
+        while (step < effort && zabs <= 4) {
             double zx2 = zx * zx;
             double zy2 = zy * zy;
             double zxzy = zx * zy;
-            zabs = zx * zx + zy + zy;
+            zabs = zx2 + zy2;
             zx = zx2 - zy2 + cx;
             zy = zxzy + zxzy + cy;
             step++;
         }
 
-        uint8_t a = 255 * (step / 200.0);
+        uint8_t a = round(255.0 * ((double)(step - 1) / effort));
         ms_surface_set_alpha(s, i, a);
     }
 }
 
-void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
+#ifdef __AVX2__
+
+void ms_plot_avx2(const ms_plane *p, ms_surface *s, int32_t effort) {
     double transform_x = 1.0 / (p->scale * p->zoom);
     double transform_y = -1.0 / (p->scale * p->zoom);
     __m256d inv_sxz_vec = _mm256_set1_pd(transform_x);
     __m256d inv_syz_vec = _mm256_set1_pd(transform_y);
-    __m256d one = _mm256_set1_pd(1);
-    __m256d four = _mm256_set1_pd(4);
 
 #pragma omp parallel for schedule(guided)
     for (size_t i = 0; i < s->size; i += 4) {
@@ -94,10 +100,11 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
         __m256d zy = _mm256_setzero_pd();
         __m256d iter = _mm256_setzero_pd();
 
-        for (int64_t i = 0; i < 200; ++i) {
+        for (int64_t i = 0; i < effort; ++i) {
             __m256d zx2 = _mm256_mul_pd(zx, zx);
             __m256d zy2 = _mm256_mul_pd(zy, zy);
             __m256d zabs = _mm256_add_pd(zx2, zy2);
+            __m256d four = _mm256_set1_pd(4);
             __m256d cmp = _mm256_cmp_pd(zabs, four, _CMP_LE_OQ);
             int32_t escape_mask = _mm256_movemask_pd(cmp);
 
@@ -108,13 +115,14 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
             __m256d zxzy = _mm256_mul_pd(zx, zy);
             __m256d nzx = _mm256_add_pd(_mm256_sub_pd(zx2, zy2), cx);
             __m256d nzy = _mm256_add_pd(_mm256_add_pd(zxzy, zxzy), cy);
+            __m256d one = _mm256_set1_pd(1);
             zx = _mm256_blendv_pd(zx, nzx, cmp);
             zy = _mm256_blendv_pd(zy, nzy, cmp);
             cmp = _mm256_and_pd(cmp, one);
             iter = _mm256_add_pd(iter, cmp);
         }
 
-        iter = _mm256_div_pd(iter, _mm256_set1_pd(200));
+        iter = _mm256_div_pd(iter, _mm256_set1_pd(effort));
         iter = _mm256_mul_pd(iter, _mm256_set1_pd(255));
         iter = _mm256_round_pd(iter, 0);
 
@@ -128,7 +136,11 @@ void ms_plot_avx2(const ms_plane *p, ms_surface *s) {
     }
 }
 
-void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
+#endif
+
+#ifdef __SSE4_1__
+
+void ms_plot_sse4(const ms_plane *p, ms_surface *s, int32_t effort) {
     double transform_x = 1.0 / (p->scale * p->zoom);
     double transform_y = -1.0 / (p->scale * p->zoom);
     __m128d inv_sxz_vec = _mm_set1_pd(transform_x);
@@ -160,11 +172,11 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
         __m128d zy = _mm_setzero_pd();
         __m128d iter = _mm_setzero_pd();
 
-        for (int64_t i = 0; i < 200; ++i) {
+        for (int64_t i = 0; i < effort; ++i) {
             __m128d zx2 = _mm_mul_pd(zx, zx);
             __m128d zy2 = _mm_mul_pd(zy, zy);
             __m128d zabs = _mm_add_pd(zx2, zy2);
-            __m128d cmp = _mm_cmp_pd(zabs, four, _CMP_LE_OQ);
+            __m128d cmp = _mm_cmple_pd(zabs, four);
             int32_t escape_mask = _mm_movemask_pd(cmp);
 
             if (escape_mask == 0) {
@@ -178,7 +190,7 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
             iter = _mm_add_pd(iter, cmp);
         }
 
-        iter = _mm_div_pd(iter, _mm_set1_pd(200));
+        iter = _mm_div_pd(iter, _mm_set1_pd(effort));
         iter = _mm_mul_pd(iter, _mm_set1_pd(255));
         iter = _mm_round_pd(iter, 0);
 
@@ -189,3 +201,5 @@ void ms_plot_sse4(const ms_plane *p, ms_surface *s) {
         ms_surface_set_alpha(s, i + 1, iter_res[1]);
     }
 }
+
+#endif
