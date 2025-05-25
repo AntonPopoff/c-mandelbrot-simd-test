@@ -61,8 +61,8 @@ void update_plane(const ms_input *input, ms_plane *p, ms_config *c) {
     if (input->zoom_down) {
         double dz = p->zoom * (1 + 0.5 * GetFrameTime()) - p->zoom;
 
-        if (p->zoom + dz > 100000000000) {
-            plane_zoom_around(p, input->mouse.x, input->mouse.y, 100000000000.0 - p->zoom);
+        if (p->zoom + dz > 150000000000) {
+            plane_zoom_around(p, input->mouse.x, input->mouse.y, 150000000000.0 - p->zoom);
         } else {
             plane_zoom_around(p, input->mouse.x, input->mouse.y, dz);
         }
