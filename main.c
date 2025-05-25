@@ -76,10 +76,6 @@ void update_plane(const ms_input *input, ms_plane *p, ms_config *c) {
         p->offset.y = -1;
     }
 
-    if (input->mouse_wheel_v != 0) {
-        plane_zoom_around(p, input->mouse.x, input->mouse.y, input->mouse_wheel_v * 5);
-    }
-
     p->screen.x = GetScreenWidth();
     p->screen.y = GetScreenHeight();
     c->effort = zoom_effort(p->zoom);
