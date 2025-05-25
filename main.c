@@ -58,32 +58,28 @@ void update_plane(const ms_input *input, ms_plane *p, ms_config *c) {
         p->offset.x += dxdy.x;
         p->offset.y += dxdy.y;
     }
-    if (input->zoom_down) {
-        double dz = p->zoom * (1 + 0.5 * GetFrameTime()) - p->zoom;
 
-        if (p->zoom + dz > 150000000000) {
-            plane_zoom_around(p, input->mouse.x, input->mouse.y, 150000000000.0 - p->zoom);
-        } else {
-            plane_zoom_around(p, input->mouse.x, input->mouse.y, dz);
-        }
+    if (input->zoom_down) {
+        double z = p->zoom * (1 + 0.5 * GetFrameTime());
+        z = z <= 150000000000 ? z : 150000000000;
+        plane_zoom_around(p, input->mouse.x, input->mouse.y, z);
     }
     if (input->zoom_up) {
-        double dz = p->zoom * (1 + 0.5 * GetFrameTime()) - p->zoom;
-
-        if (p->zoom - dz >= 0.25) {
-            plane_zoom_around(p, input->mouse.x, input->mouse.y, -dz);
-        } else {
-            plane_zoom_around(p, input->mouse.x, input->mouse.y, -(p->zoom - 0.25));
-        }
+        double z = p->zoom / (1 + 0.5 * GetFrameTime());
+        z = z >= 0.25 ? z : 0.25;
+        plane_zoom_around(p, input->mouse.x, input->mouse.y, z);
     }
+
     if (input->reset) {
         p->zoom = 1;
         p->offset.x = 2.5;
         p->offset.y = -1;
     }
+
     if (input->mouse_wheel_v != 0) {
         plane_zoom_around(p, input->mouse.x, input->mouse.y, input->mouse_wheel_v * 5);
     }
+
     p->screen.x = GetScreenWidth();
     p->screen.y = GetScreenHeight();
     c->effort = zoom_effort(p->zoom);

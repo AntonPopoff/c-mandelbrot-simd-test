@@ -23,9 +23,9 @@ ms_vec2d plane_from_screen(const ms_plane *p, double x, double y) {
     };
 }
 
-void plane_zoom_around(ms_plane *p, int32_t mouse_x, int32_t mouse_y, double dz) {
+void plane_zoom_around(ms_plane *p, int32_t mouse_x, int32_t mouse_y, double z) {
     ms_vec2d mouse_scr = plane_from_screen_no_offset(p, mouse_x, mouse_y);
-    p->zoom += dz;
+    p->zoom = z;
     ms_vec2d new_mouse_scr = plane_from_screen_no_offset(p, mouse_x, mouse_y);
     p->offset.x += new_mouse_scr.x - mouse_scr.x;
     p->offset.y += new_mouse_scr.y - mouse_scr.y;
